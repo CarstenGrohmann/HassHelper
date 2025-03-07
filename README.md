@@ -1,7 +1,7 @@
 # Home Assistant Helper
 
 ## Summary
-These scripts helps maintaining [Home Assistant](https://www.home-assistant.io).
+These scripts help to maintain [Home Assistant](https://www.home-assistant.io).
 
 ### copy_template_data_from_states_to_statistics.sh
 
@@ -13,12 +13,12 @@ To keep the historical data, you need to set the state class property
 and copy the data from the table "states" to the statistics table, as the
 statistics table is used to store historical data.
 
-This script helps to copies sensor data from the table "states" to the
+This script helps to copy sensor data from the table "states" to the
 statistics table in an SQLite database.
 
 ## License
 
-This scripts are licensed under the MIT license.
+These scripts are licensed under the MIT license.
 
 > Copyright (c) 2025 Carsten Grohmann,  mail &lt;add at here&gt; carstengrohmann.de
 >

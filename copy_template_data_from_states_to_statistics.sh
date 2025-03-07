@@ -16,7 +16,7 @@
 # and copy the data from the table "states" to the statistics table, as the
 # statistics table is used to store historical data.
 #
-# This script helps to copies sensor data from the table "states" to the
+# This script helps to copy sensor data from the table "states" to the
 # statistics table in an SQLite database.
 #
 # The script should be adapted to the user's needs, and the generated SQL
@@ -30,15 +30,15 @@
 #
 # USAGE
 # =====
-# 1. Add state class to all affected templates
-# 2. Read and understand this script
-# 3. Adapt this file to your needs, check "CHANGEME" comments
-# 4. Run this script
-# 5. Check script output
-# 6. Check the generated SQL file for warnings and errors
-# 7. Shutdown Home Assistant
-# 8. Create a backup of your database
-# 9. Run the generated SQL file
+#  1. Add state class to all affected templates
+#  2. Read and understand this script
+#  3. Adapt this file to your needs, check "CHANGEME" comments
+#  4. Run this script
+#  5. Check script output
+#  6. Check the generated SQL file for warnings and errors
+#  7. Shutdown Home Assistant
+#  8. Create a backup of your database
+#  9. Run the generated SQL file
 #   $ sqlite3 config/home-assistant_v2.db "SELECT MAX(id) FROM statistics;"
 #   357043
 #
@@ -49,7 +49,7 @@
 #
 #   $ sqlite3 config/home-assistant_v2.db "SELECT MAX(id) FROM statistics;"
 #   358476
-#
+# 10. Restart Home Assistant and check sensor data
 #
 # ROLLBACK
 # ========
@@ -121,7 +121,7 @@ for snap in "${LIST_BACKUP_IDS[@]}"; do
      exit 1
   fi
   if [[ $((i % 7)) -eq 0 ]]; then
-    read -p "Press <enter> to continue ...";
+    read -p "Press <enter> to continue ..."
   fi
   ((i++))
 done
@@ -175,7 +175,7 @@ LAST=""
 for snap in "${LIST_BACKUP_IDS[@]}"; do
    SCHEMA_FILE="$RESTORE_DIR/${snap}/schema_${DATA_TABLE}.txt"
    if [[ -s "$SCHEMA_FILE" ]]; then
-     echo "Sensor data for snapshot $snap already extracted - ignoring"
+     echo "Schema data for snapshot $snap already extracted - ignoring"
      continue
   fi
    echo "Compare schema of ${DATA_TABLE} between $LAST and $snap"
