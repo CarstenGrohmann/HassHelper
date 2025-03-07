@@ -3,6 +3,11 @@
 ## Summary
 These scripts help to maintain [Home Assistant](https://www.home-assistant.io).
 
+All these scripts should be adapted to the user's needs, and the generated
+SQL file should be checked.
+
+A test with a copy of the Home Assistant database outside HA is recommended.
+
 ### copy_template_data_from_states_to_statistics.sh
 
 If you set up a template sensor without a state class, the historical
@@ -15,6 +20,16 @@ statistics table is used to store historical data.
 
 This script helps to copy sensor data from the table "states" to the
 statistics table in an SQLite database.
+
+## restore_old_sensor_data_from_backup.sh
+
+The script is intended to help users who purged sensor data by accident.
+
+This script restores old databases from backup snapshots, extracts sensor
+data from the short-term and long-term statistics tables, and prepares
+SQL statements to re-insert.
+
+Additionally, the script can be used to map old sensor IDs to new sensor IDs.
 
 ## License
 
