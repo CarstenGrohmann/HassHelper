@@ -21,6 +21,12 @@ statistics table is used to store historical data.
 This script helps to copy sensor data from the table "states" to the
 statistics table in an SQLite database.
 
+## db_maint.py
+
+Script to change the assignment of sensor data in "Long term statistics"
+table ("statistics") and in "History" (table "statistics_short_term") from
+an old sensor to a new sensor.
+
 ## restore_old_sensor_data_from_backup.sh
 
 The script is intended to help users who purged sensor data by accident.
