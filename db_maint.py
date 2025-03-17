@@ -229,14 +229,9 @@ def move_data(old_sensor_name: str, new_sensor_name: str):
         exec_modify(
             f"""
             UPDATE {t}
-            SET metadata_id = :new_sensor_id
-            WHERE metadata_id = :old_sensor_id;
+            SET metadata_id = {new_sensor_id}
+            WHERE metadata_id = {old_sensor_id};
             """,
-            {
-                "table": t,
-                "new_sensor_id": new_sensor_id,
-                "old_sensor_id": old_sensor_id,
-            },
         )
     logging.info("All data from the old sensor assigned to the new sensor")
 
@@ -268,7 +263,11 @@ if __name__ == "__main__":
         help="SQLite database file",
     )
 
-    subparsers = parser.add_subparsers(description="Available commands", dest="action")
+    subparsers = parser.add_subparsers(
+        description="Available commands",
+        dest="action",
+        help="sub-command -h|--help for detailed help on each command",
+    )
     md_parser = subparsers.add_parser(
         "move_data",
         description="Assign data from old sensor to new sensor. This "
@@ -284,7 +283,6 @@ if __name__ == "__main__":
         dest="sensor_name_new",
         help="name new sensor",
     )
-
     list_parser = subparsers.add_parser(
         "list_sensors",
         description="Show all available sensors",
