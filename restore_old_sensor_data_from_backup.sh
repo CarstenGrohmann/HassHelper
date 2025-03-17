@@ -16,8 +16,8 @@
 #
 # The script is intended to help users who purged sensor data by accident.
 #
-# Additionally, the script can be used to map old sensor IDs to new sensor
-# IDs.
+# Additionally, the script can be used to change the data assignment from
+# old sensor to the new sensor.
 #
 # The script should be adapted to the user's needs, and the generated SQL
 # file should be checked. A test with a copy of the Home Assistant database

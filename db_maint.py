@@ -15,6 +15,37 @@ Usage:
 3. Create a backup of your database
 4. Run the script with the "--modify" option
 5. Restart Home Assistant and check sensor data
+6. Cleanup old sensors in Home Assistant
+
+Example: Assign data of sensor.deye_inverter_mqtt_phase1_voltage to sensor.deye_inverter_mqtt_grid_l1_voltage
+
+# ./db_maint.py move_data sensor.deye_inverter_mqtt_phase1_voltage sensor.deye_inverter_mqtt_grid_l1_voltage
+    INFO: move_data(): Old sensor id: 101
+    INFO: move_data(): New sensor id: 172
+    INFO: move_data(): Consistency checks passed
+    INFO: move_data(): Assign data from the old sensor in table statistics to the new sensor
+    INFO: exec_modify(): Dry-run:
+UPDATE statistics
+SET metadata_id = :new_sensor_id
+WHERE metadata_id = :old_sensor_id;
+ with parameter {'table': 'statistics', 'new_sensor_id': 172, 'old_sensor_id': 101}
+    INFO: move_data(): Assign data from the old sensor in table statistics_short_term to the new sensor
+    INFO: exec_modify(): Dry-run:
+UPDATE statistics_short_term
+SET metadata_id = :new_sensor_id
+WHERE metadata_id = :old_sensor_id;
+ with parameter {'table': 'statistics_short_term', 'new_sensor_id': 172, 'old_sensor_id': 101}
+    INFO: move_data(): All data from the old sensor assigned to the new sensor
+
+# ./db_maint.py -m move_data sensor.deye_inverter_mqtt_phase1_voltage sensor.deye_inverter_mqtt_grid_l1_voltage
+    INFO: move_data(): Old sensor id: 101
+    INFO: move_data(): New sensor id: 172
+    INFO: move_data(): Consistency checks passed
+    INFO: move_data(): Assign data from the old sensor in table statistics to the new sensor
+5257 rows modified / deleted
+    INFO: move_data(): Assign data from the old sensor in table statistics_short_term to the new sensor
+8137 rows modified / deleted
+    INFO: move_data(): All data from the old sensor assigned to the new sensor
 
 Copyright (c) 2025 Carsten Grohmann
 License: MIT (see LICENSE.txt)
