@@ -23,9 +23,14 @@ statistics table in an SQLite database.
 
 ## db_maint.py
 
-Script to change the assignment of sensor data in "Long term statistics"
-table ("statistics") and in "History" (table "statistics_short_term") from
-an old sensor to a new sensor.
+Perform some maintenance tasks on the Home Assistant database.
+
+* change the assignment of sensor data in "Long term statistics" (table
+  "statistics") and in "History" (table "statistics_short_term") from an
+  old sensor to a new sensor.
+
+* assign sensor data to the original sensors and delete the "<name>_2"
+  sensors. The "<name>_2" sensors were created by mistake.
 
 ## restore_old_sensor_data_from_backup.sh
 

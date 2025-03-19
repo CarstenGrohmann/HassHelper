@@ -139,6 +139,48 @@ def list_sensors():
         logging.info(" - %s", name[0])
 
 
+def merge2():
+    """
+    Assign sensor data to the original sensors and delete the "<name>_2" sensors.
+    The "<name>_2" sensors were created by mistake.
+    """
+    stmt = "SELECT statistic_id FROM statistics_meta WHERE statistic_id like '%_2';"
+    cursor = exec_select(stmt)
+    list_all_2_sensors = [x[0] for x in cursor.fetchall()]
+    for name in list_all_2_sensors:
+        sensor2_name = name
+        sensor_name = name[:-2]
+        logging.info("Assign values from %s to %s", sensor2_name, sensor_name)
+        for table in ["statistics", "statistics_short_term"]:
+            logging.info('Update table "%s"', table)
+            exec_modify(
+                f"""
+                UPDATE OR IGNORE {table}
+                  SET metadata_id = (SELECT id FROM statistics_meta WHERE statistic_id = :sensor_name LIMIT 1)
+                  WHERE metadata_id = (SELECT id FROM statistics_meta WHERE statistic_id = :sensor2_name LIMIT 1);
+                """,
+                {"sensor_name": sensor_name, "sensor2_name": sensor2_name},
+            )
+
+        logging.info("Delete statistics meta data for %s", sensor2_name)
+        exec_modify(
+            "DELETE FROM statistics_meta WHERE statistic_id = ?",
+            (sensor2_name,),
+        )
+
+        logging.info('Update table "states"')
+        exec_modify(
+            """
+            UPDATE OR IGNORE states
+              SET metadata_id = (SELECT metadata_id FROM states_meta WHERE entity_id = :sensor_name LIMIT 1)
+              WHERE metadata_id = (SELECT metadata_id FROM states_meta WHERE entity_id = :sensor2_name LIMIT 1);
+            """,
+            {"sensor_name": sensor_name, "sensor2_name": sensor2_name},
+        )
+        logging.info("Delete states meta data for %s", sensor2_name)
+        exec_modify("DELETE FROM states_meta WHERE entity_id = ?", (sensor2_name,))
+
+
 def move_data(old_sensor_name: str, new_sensor_name: str):
     """Assign sensor data from old sensor to new sensor"""
 
@@ -288,6 +330,11 @@ if __name__ == "__main__":
         description="Show all available sensors",
         help="Show all available sensors",
     )
+    merge2_parser = subparsers.add_parser(
+        "merge2",
+        description='Assign sensor data from all "<name>_2" sensors to original sensors and delete "<name>_2" sensors, as they were created by mistake.',
+        help='Assign sensor data from all "<name>_2" sensors to original sensors and delete "<name>_2" sensors, as they were created by mistake.',
+    )
 
     args = parser.parse_args()
 
@@ -321,3 +368,5 @@ if __name__ == "__main__":
         move_data(args.sensor_name_old, args.sensor_name_new)
     elif args.action == "list_sensors":
         list_sensors()
+    elif args.action == "merge2":
+        merge2()
