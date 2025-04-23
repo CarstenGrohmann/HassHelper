@@ -180,6 +180,13 @@ def merge2():
         logging.info("Delete states meta data for %s", sensor2_name)
         exec_modify("DELETE FROM states_meta WHERE entity_id = ?", (sensor2_name,))
 
+    if dry_run:
+        logging.info(
+            "This was a dry-run. No data was modified. Run script with -m to modify the database."
+        )
+    else:
+        logging.info("All data from the old sensor assigned to the new sensor")
+
 
 def move_data(old_sensor_name: str, new_sensor_name: str):
     """Assign sensor data from old sensor to new sensor"""
@@ -275,7 +282,12 @@ def move_data(old_sensor_name: str, new_sensor_name: str):
             WHERE metadata_id = {old_sensor_id};
             """,
         )
-    logging.info("All data from the old sensor assigned to the new sensor")
+    if dry_run:
+        logging.info(
+            "This was a dry-run. No data was modified. Run script with -m to modify the database."
+        )
+    else:
+        logging.info("All data from the old sensor assigned to the new sensor")
 
 
 if __name__ == "__main__":
