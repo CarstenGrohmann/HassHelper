@@ -352,7 +352,9 @@ if __name__ == "__main__":
 
     logger = logging.getLogger()
     FORMAT = "%(levelname)8s: %(funcName)s(): %(message)s"
-    logging.basicConfig(format=FORMAT)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter(FORMAT))
+    logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
     if not args.action:
