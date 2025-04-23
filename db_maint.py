@@ -150,6 +150,9 @@ def merge2():
     for name in list_all_2_sensors:
         sensor2_name = name
         sensor_name = name[:-2]
+        if sensor_name.startswith("sensor.electricmeter"):
+            logging.info("Skip electric meter sensor %s", sensor_name)
+            continue
         logging.info("Assign values from %s to %s", sensor2_name, sensor_name)
         for table in ["statistics", "statistics_short_term"]:
             logging.info('Update table "%s"', table)
