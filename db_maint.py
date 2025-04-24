@@ -150,6 +150,13 @@ def merge_all():
     for name in list_all_2_sensors:
         sensor2_name = name
         sensor_name = name[:-2]
+        if query_statistics_sensor_id(sensor_name) is None:
+            logging.warning(
+                "Sensor %s exists but %s does not. Skip changing data assignment of this sensor.",
+                sensor2_name,
+                sensor_name,
+            )
+            continue
         if sensor_name.startswith("sensor.electricmeter"):
             logging.info("Skip electric meter sensor %s", sensor_name)
             continue
