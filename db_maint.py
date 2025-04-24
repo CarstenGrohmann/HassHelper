@@ -140,62 +140,87 @@ def list_sensors():
 
 
 def merge_all():
-    """
-    Assign sensor data to the original sensors and delete the "<name>_2" sensors.
+    """\
+    Assign sensor data to the original sensors and delete all "<name>_2" sensors.
     The "<name>_2" sensors were created by mistake.
     """
     stmt = "SELECT statistic_id FROM statistics_meta WHERE statistic_id like '%_2';"
     cursor = exec_select(stmt)
     list_all_2_sensors = [x[0] for x in cursor.fetchall()]
     for name in list_all_2_sensors:
-        sensor2_name = name
-        sensor_name = name[:-2]
-        if query_statistics_sensor_id(sensor_name) is None:
-            logging.warning(
-                "Sensor %s exists but %s does not. Skip changing data assignment of this sensor.",
-                sensor2_name,
-                sensor_name,
-            )
+        if name.startswith("sensor.electricmeter"):
+            logging.info("Skip electric meter sensor %s", name)
             continue
-        if sensor_name.startswith("sensor.electricmeter"):
-            logging.info("Skip electric meter sensor %s", sensor_name)
-            continue
-        logging.info("Assign values from %s to %s", sensor2_name, sensor_name)
-        for table in ["statistics", "statistics_short_term"]:
-            logging.info('Update table "%s"', table)
-            exec_modify(
-                f"""
-                UPDATE OR IGNORE {table}
-                  SET metadata_id = (SELECT id FROM statistics_meta WHERE statistic_id = :sensor_name LIMIT 1)
-                  WHERE metadata_id = (SELECT id FROM statistics_meta WHERE statistic_id = :sensor2_name LIMIT 1);
-                """,
-                {"sensor_name": sensor_name, "sensor2_name": sensor2_name},
-            )
+        merge_single(name[:-2])
 
-        logging.info("Delete statistics meta data for %s", sensor2_name)
-        exec_modify(
-            "DELETE FROM statistics_meta WHERE statistic_id = ?",
-            (sensor2_name,),
+
+def merge_single(sensor_name: str):
+    """\
+    Assign sensor data from the "<name>_2" sensor to "<name>" sensors and delete "<name>_2" sensors.
+
+    :param sensor_name: Name of the original sensor to assign data to.
+    """
+    sensor2_name = f"{sensor_name}_2"
+
+    if sensor_name.endswith("_2"):
+        logging.error(
+            "Sensor name %s ends with _2. This is not allowed. Use the original sensor name.",
+            sensor_name,
         )
+        return
+    if query_statistics_sensor_id(sensor_name) is None:
+        logging.warning(
+            "Sensor %s does not exist. Skip changing data assignment of this sensor.",
+            sensor_name,
+        )
+        return
+    if query_statistics_sensor_id(sensor2_name) is None:
+        logging.warning(
+            "Sensor %s does not exist. Skip changing data assignment of this sensor.",
+            sensor2_name,
+        )
+        return
 
-        logging.info('Update table "states"')
+    logging.info("Assign values from %s to %s", sensor2_name, sensor_name)
+    for table in ["statistics", "statistics_short_term"]:
+        logging.info('Update table "%s"', table)
         exec_modify(
-            """
-            UPDATE OR IGNORE states
-              SET metadata_id = (SELECT metadata_id FROM states_meta WHERE entity_id = :sensor_name LIMIT 1)
-              WHERE metadata_id = (SELECT metadata_id FROM states_meta WHERE entity_id = :sensor2_name LIMIT 1);
+            f"""
+            UPDATE OR IGNORE {table}
+              SET metadata_id = (SELECT id FROM statistics_meta WHERE statistic_id = :sensor_name LIMIT 1)
+              WHERE metadata_id = (SELECT id FROM statistics_meta WHERE statistic_id = :sensor2_name LIMIT 1);
             """,
             {"sensor_name": sensor_name, "sensor2_name": sensor2_name},
         )
-        logging.info("Delete states meta data for %s", sensor2_name)
-        exec_modify("DELETE FROM states_meta WHERE entity_id = ?", (sensor2_name,))
+
+    logging.info("Delete statistics meta data for %s", sensor2_name)
+    exec_modify(
+        "DELETE FROM statistics_meta WHERE statistic_id = ?",
+        (sensor2_name,),
+    )
+
+    logging.info('Update table "states"')
+    exec_modify(
+        """
+        UPDATE OR IGNORE states
+          SET metadata_id = (SELECT metadata_id FROM states_meta WHERE entity_id = :sensor_name LIMIT 1)
+          WHERE metadata_id = (SELECT metadata_id FROM states_meta WHERE entity_id = :sensor2_name LIMIT 1);
+        """,
+        {"sensor_name": sensor_name, "sensor2_name": sensor2_name},
+    )
+    logging.info("Delete states meta data for %s", sensor2_name)
+    exec_modify("DELETE FROM states_meta WHERE entity_id = ?", (sensor2_name,))
 
     if dry_run:
         logging.info(
             "This was a dry-run. No data was modified. Run script with -m to modify the database."
         )
     else:
-        logging.info("All data from the old sensor assigned to the new sensor")
+        logging.info(
+            "All data from the old sensor %s assigned to the new sensor %s",
+            sensor2_name,
+            sensor_name,
+        )
 
 
 def move_data(old_sensor_name: str, new_sensor_name: str):
@@ -357,6 +382,15 @@ if __name__ == "__main__":
         description='Assign sensor data from all "<name>_2" sensors to original sensors and delete "<name>_2" sensors, as they were created by mistake.',
         help='Assign sensor data from all "<name>_2" sensors to original sensors and delete "<name>_2" sensors, as they were created by mistake.',
     )
+    merge_single_parser = subparsers.add_parser(
+        "merge_single",
+        description='Assign sensor data from the "<name>_2" sensor to the "<name>" sensors and delete "<name>_2" sensors.',
+        help='Assign sensor data from the "<name>_2" sensor to the "<name>" sensors and delete "<name>_2" sensors.',
+    )
+    merge_single_parser.add_argument(
+        dest="sensor_name_original",
+        help="Original sensor name (without _2)",
+    )
 
     args = parser.parse_args()
 
@@ -394,3 +428,5 @@ if __name__ == "__main__":
         list_sensors()
     elif args.action == "merge_all":
         merge_all()
+    elif args.action == "merge_single":
+        merge_single(args.sensor_name_original)
