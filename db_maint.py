@@ -67,7 +67,7 @@ dry_run: bool = True
 """Don't modify the database if True"""
 
 
-def exec_modify(stmt: str, params: [tuple | dict[str, int | str]] = ()) -> None:
+def exec_modify(stmt: str, params: tuple[str] | dict[str, int | str] = ()) -> None:
     """Execute a UPDATE, DELETE or INSERT statement."""
     with conn:
         stmt = textwrap.dedent(stmt)
@@ -84,7 +84,7 @@ def exec_modify(stmt: str, params: [tuple | dict[str, int | str]] = ()) -> None:
         print(f"{cursor.rowcount} rows modified / deleted")
 
 
-def exec_select(stmt: str, params: [tuple | dict[str, int | str]] = ()):
+def exec_select(stmt: str, params: tuple | dict[str, int | str] = ()):
     """Execute a SELECT statement and return the cursor."""
     with conn:
         stmt_wo_leading_whitespaces = textwrap.dedent(stmt).strip()
