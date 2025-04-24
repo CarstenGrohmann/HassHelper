@@ -139,7 +139,7 @@ def list_sensors():
         logging.info(" - %s", name[0])
 
 
-def merge2():
+def merge_all():
     """
     Assign sensor data to the original sensors and delete the "<name>_2" sensors.
     The "<name>_2" sensors were created by mistake.
@@ -345,8 +345,8 @@ if __name__ == "__main__":
         description="Show all available sensors",
         help="Show all available sensors",
     )
-    merge2_parser = subparsers.add_parser(
-        "merge2",
+    merge_all_parser = subparsers.add_parser(
+        "merge_all",
         description='Assign sensor data from all "<name>_2" sensors to original sensors and delete "<name>_2" sensors, as they were created by mistake.',
         help='Assign sensor data from all "<name>_2" sensors to original sensors and delete "<name>_2" sensors, as they were created by mistake.',
     )
@@ -385,5 +385,5 @@ if __name__ == "__main__":
         move_data(args.sensor_name_old, args.sensor_name_new)
     elif args.action == "list_sensors":
         list_sensors()
-    elif args.action == "merge2":
-        merge2()
+    elif args.action == "merge_all":
+        merge_all()
