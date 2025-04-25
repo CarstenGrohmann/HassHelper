@@ -147,11 +147,17 @@ def merge_all():
     stmt = "SELECT statistic_id FROM statistics_meta WHERE statistic_id like '%_2';"
     cursor = exec_select(stmt)
     list_all_2_sensors = [x[0] for x in cursor.fetchall()]
-    for name in list_all_2_sensors:
-        if name.startswith("sensor.electricmeter"):
-            logging.info("Skip electric meter sensor %s", name)
+    sensors2merge = []
+    for sensor2_name in list_all_2_sensors:
+        sensor_name = sensor2_name[:-2]
+        if sensor_name.startswith("sensor.electricmeter"):
+            logging.info("Skip electric meter sensor %s", sensor_name)
             continue
-        merge_single(name[:-2])
+        logging.info("Process sensor %s", sensor_name)
+        sensors2merge.append(sensor_name)
+
+    for sensor_name in sensors2merge:
+        merge_single(sensor_name)
 
 
 def merge_single(sensor_name: str):
