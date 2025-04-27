@@ -19,33 +19,33 @@ Usage:
 
 Example: Assign data of sensor.deye_inverter_mqtt_phase1_voltage to sensor.deye_inverter_mqtt_grid_l1_voltage
 
-# ./db_maint.py move_data sensor.deye_inverter_mqtt_phase1_voltage sensor.deye_inverter_mqtt_grid_l1_voltage
-    INFO: move_data(): Old sensor id: 101
-    INFO: move_data(): New sensor id: 172
-    INFO: move_data(): Consistency checks passed
-    INFO: move_data(): Assign data from the old sensor in table statistics to the new sensor
+# ./db_maint.py merge_check_single_sensor sensor.deye_inverter_mqtt_phase1_voltage sensor.deye_inverter_mqtt_grid_l1_voltage
+    INFO: merge_check_single_sensor(): Old sensor id: 101
+    INFO: merge_check_single_sensor(): New sensor id: 172
+    INFO: merge_check_single_sensor(): Consistency checks passed
+    INFO: merge_check_single_sensor(): Assign data from the old sensor in table statistics to the new sensor
     INFO: exec_modify(): Dry-run:
 UPDATE statistics
 SET metadata_id = :new_sensor_id
 WHERE metadata_id = :old_sensor_id;
  with parameter {'table': 'statistics', 'new_sensor_id': 172, 'old_sensor_id': 101}
-    INFO: move_data(): Assign data from the old sensor in table statistics_short_term to the new sensor
+    INFO: merge_check_single_sensor(): Assign data from the old sensor in table statistics_short_term to the new sensor
     INFO: exec_modify(): Dry-run:
 UPDATE statistics_short_term
 SET metadata_id = :new_sensor_id
 WHERE metadata_id = :old_sensor_id;
  with parameter {'table': 'statistics_short_term', 'new_sensor_id': 172, 'old_sensor_id': 101}
-    INFO: move_data(): All data from the old sensor assigned to the new sensor
+    INFO: merge_check_single_sensor(): All data from the old sensor assigned to the new sensor
 
-# ./db_maint.py -m move_data sensor.deye_inverter_mqtt_phase1_voltage sensor.deye_inverter_mqtt_grid_l1_voltage
-    INFO: move_data(): Old sensor id: 101
-    INFO: move_data(): New sensor id: 172
-    INFO: move_data(): Consistency checks passed
-    INFO: move_data(): Assign data from the old sensor in table statistics to the new sensor
+# ./db_maint.py -m merge_check_single_sensor sensor.deye_inverter_mqtt_phase1_voltage sensor.deye_inverter_mqtt_grid_l1_voltage
+    INFO: merge_check_single_sensor(): Old sensor id: 101
+    INFO: merge_check_single_sensor(): New sensor id: 172
+    INFO: merge_check_single_sensor(): Consistency checks passed
+    INFO: merge_check_single_sensor(): Assign data from the old sensor in table statistics to the new sensor
 5257 rows modified / deleted
-    INFO: move_data(): Assign data from the old sensor in table statistics_short_term to the new sensor
+    INFO: merge_check_single_sensor(): Assign data from the old sensor in table statistics_short_term to the new sensor
 8137 rows modified / deleted
-    INFO: move_data(): All data from the old sensor assigned to the new sensor
+    INFO: merge_check_single_sensor(): All data from the old sensor assigned to the new sensor
 
 Copyright (c) 2025 Carsten Grohmann
 License: MIT (see LICENSE.txt)
@@ -125,7 +125,7 @@ def query_statistics_sensor_id(sensor_name: str) -> Optional[int]:
     return rows[0][0]
 
 
-def list_sensors():
+def list_all_sensors():
     """List all known sensor names"""
     res = exec_select(
         """SELECT statistic_id as a FROM statistics_meta WHERE statistic_id like '%sensor%'
@@ -139,10 +139,13 @@ def list_sensors():
         logging.info(" - %s", name[0])
 
 
-def merge_all():
+def merge_all_sensors():
     """\
-    Assign sensor data to the original sensors and delete all "<name>_2" sensors.
-    The "<name>_2" sensors were created by mistake.
+    Search all sensor pairs consist of "<name>" and "<name>_2" and merge data
+    back to the "<name>" sensor.
+
+    See: "merge_single" option resp. merge_single_sensor() function about
+         limitations and how it works.
     """
     stmt = "SELECT statistic_id FROM statistics_meta WHERE statistic_id like '%_2';"
     cursor = exec_select(stmt)
@@ -157,27 +160,32 @@ def merge_all():
         sensors2merge.append(sensor_name)
 
     for sensor_name in sensors2merge:
-        merge_single(sensor_name)
+        merge_single_sensor(sensor_name)
 
 
-def merge_single(sensor_name: str):
+def merge_single_sensor(original_name: str):
     """\
-    Assign sensor data from the "<name>_2" sensor to "<name>" sensors and delete "<name>_2" sensors.
+    Assign sensor data from the "<name>_2" sensor to the "<original name>" sensor
+    and delete "<name>_2" sensors.
 
-    :param sensor_name: Name of the original sensor to assign data to.
+    This function doesn't do any condition checks.
+
+    It changes the reference of all items in the statistics tables and states table
+    from the "<name>_2" sensor to the "<original name>" sensor and deletes the
+    "<name>_2" sensor from the statistics_meta and states_meta tables.
     """
-    sensor2_name = f"{sensor_name}_2"
+    sensor2_name = f"{original_name}_2"
 
-    if sensor_name.endswith("_2"):
+    if original_name.endswith("_2"):
         logging.error(
             "Sensor name %s ends with _2. This is not allowed. Use the original sensor name.",
-            sensor_name,
+            original_name,
         )
         return
-    if query_statistics_sensor_id(sensor_name) is None:
+    if query_statistics_sensor_id(original_name) is None:
         logging.warning(
             "Sensor %s does not exist. Skip changing data assignment of this sensor.",
-            sensor_name,
+            original_name,
         )
         return
     if query_statistics_sensor_id(sensor2_name) is None:
@@ -187,16 +195,16 @@ def merge_single(sensor_name: str):
         )
         return
 
-    logging.info("Assign values from %s to %s", sensor2_name, sensor_name)
+    logging.info("Assign values from %s to %s", sensor2_name, original_name)
     for table in ["statistics", "statistics_short_term"]:
         logging.info('Update table "%s"', table)
         exec_modify(
             f"""
             UPDATE OR IGNORE {table}
-              SET metadata_id = (SELECT id FROM statistics_meta WHERE statistic_id = :sensor_name LIMIT 1)
+              SET metadata_id = (SELECT id FROM statistics_meta WHERE statistic_id = :original_name LIMIT 1)
               WHERE metadata_id = (SELECT id FROM statistics_meta WHERE statistic_id = :sensor2_name LIMIT 1);
             """,
-            {"sensor_name": sensor_name, "sensor2_name": sensor2_name},
+            {"original_name": original_name, "sensor2_name": sensor2_name},
         )
 
     logging.info("Delete statistics meta data for %s", sensor2_name)
@@ -209,10 +217,10 @@ def merge_single(sensor_name: str):
     exec_modify(
         """
         UPDATE OR IGNORE states
-          SET metadata_id = (SELECT metadata_id FROM states_meta WHERE entity_id = :sensor_name LIMIT 1)
+          SET metadata_id = (SELECT metadata_id FROM states_meta WHERE entity_id = :original_name LIMIT 1)
           WHERE metadata_id = (SELECT metadata_id FROM states_meta WHERE entity_id = :sensor2_name LIMIT 1);
         """,
-        {"sensor_name": sensor_name, "sensor2_name": sensor2_name},
+        {"original_name": original_name, "sensor2_name": sensor2_name},
     )
     logging.info("Delete states meta data for %s", sensor2_name)
     exec_modify("DELETE FROM states_meta WHERE entity_id = ?", (sensor2_name,))
@@ -225,12 +233,25 @@ def merge_single(sensor_name: str):
         logging.info(
             "All data from the old sensor %s assigned to the new sensor %s",
             sensor2_name,
-            sensor_name,
+            original_name,
         )
 
 
-def move_data(old_sensor_name: str, new_sensor_name: str):
-    """Assign sensor data from old sensor to new sensor"""
+def merge_check_single_sensor(old_sensor_name: str, new_sensor_name: str):
+    """\
+    Assign sensor data from old sensor to new sensor
+
+    This function does some condition checks before assigning the data.
+    It checks:
+    - if the old and the new sensor exist
+    - if the old and the new sensor have different ids
+    - if the last items of the old sensor are older than the first items of the new sensor
+
+    After the checks passed, the function assigns the data from the old sensor to the new
+    sensor in both statistics tables.
+
+    The old sensor will not be deleted.
+    """
 
     # error messages are already logged in query_statistics
     old_sensor_id = query_statistics_sensor_id(old_sensor_name)
@@ -333,7 +354,7 @@ def move_data(old_sensor_name: str, new_sensor_name: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Modify the HASS SQLite database",
+        description="Performing sensor maintenance tasks in HASS SQLite database",
         epilog=(
             "By default, the script runs in dry-run mode. Set option -m "
             "resp. --modify to change the database. Exit the Home Assistant "
@@ -363,38 +384,38 @@ if __name__ == "__main__":
         dest="action",
         help="sub-command -h|--help for detailed help on each command",
     )
-    md_parser = subparsers.add_parser(
-        "move_data",
-        description="Assign data from old sensor to new sensor. This "
-        "command can be used to update statistical data after "
-        "a sensor has be renamed.",
-        help="Assign data from old sensor to new sensor",
-    )
-    md_parser.add_argument(
-        dest="sensor_name_old",
-        help="name old sensor",
-    )
-    md_parser.add_argument(
-        dest="sensor_name_new",
-        help="name new sensor",
-    )
     list_parser = subparsers.add_parser(
         "list_sensors",
         description="Show all available sensors",
         help="Show all available sensors",
     )
+    merge_check_parser = subparsers.add_parser(
+        "merge_check",
+        description=merge_check_single_sensor.__doc__,
+        help='Merge items from one sensor to another sensor with some checks.',
+    )
+    merge_check_parser.add_argument(
+        dest="sensor_name_old",
+        help="name old sensor",
+    )
+    merge_check_parser.add_argument(
+        dest="sensor_name_new",
+        help="name new sensor",
+    )
+    desc = 'Assign sensor data from all "<name>_2" sensors to original sensors and delete "<name>_2" sensors, as they were created by mistake.'
     merge_all_parser = subparsers.add_parser(
         "merge_all",
-        description='Assign sensor data from all "<name>_2" sensors to original sensors and delete "<name>_2" sensors, as they were created by mistake.',
-        help='Assign sensor data from all "<name>_2" sensors to original sensors and delete "<name>_2" sensors, as they were created by mistake.',
+        #     The "<name>_2" sensors were created by mistake.
+        description=merge_all_sensors.__doc__,
+        help='Search and cleanup all "<name>_2" sensors, as they were created by mistake.',
     )
     merge_single_parser = subparsers.add_parser(
         "merge_single",
-        description='Assign sensor data from the "<name>_2" sensor to the "<name>" sensors and delete "<name>_2" sensors.',
-        help='Assign sensor data from the "<name>_2" sensor to the "<name>" sensors and delete "<name>_2" sensors.',
+        description=merge_single_sensor.__doc__,
+        help='Merge items from "<name>_2" sensor back to "<name>" sensor w/o checks.',
     )
     merge_single_parser.add_argument(
-        dest="sensor_name_original",
+        dest="sensor_name",
         help="Original sensor name (without _2)",
     )
 
@@ -428,11 +449,11 @@ if __name__ == "__main__":
     except AttributeError:
         conn.isolation_level = None
 
-    if args.action == "move_data":
-        move_data(args.sensor_name_old, args.sensor_name_new)
-    elif args.action == "list_sensors":
-        list_sensors()
+    if args.action == "list_sensors":
+        list_all_sensors()
+    elif args.action == "merge_check":
+        merge_check_single_sensor(args.sensor_name_old, args.sensor_name_new)
     elif args.action == "merge_all":
-        merge_all()
+        merge_all_sensors()
     elif args.action == "merge_single":
-        merge_single(args.sensor_name_original)
+        merge_single_sensor(args.sensor_name)
