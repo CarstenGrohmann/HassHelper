@@ -67,7 +67,7 @@ dry_run: bool = True
 """Don't modify the database if True"""
 
 
-def exec_modify(stmt: str, params: tuple[str] | dict[str, int | str] = ()) -> None:
+def exec_modify(stmt: str, params: tuple[str, ...] | dict[str, int | str] = ()) -> None:
     """Execute a UPDATE, DELETE or INSERT statement."""
     with conn:
         stmt = textwrap.dedent(stmt)
@@ -76,7 +76,7 @@ def exec_modify(stmt: str, params: tuple[str] | dict[str, int | str] = ()) -> No
             return
         try:
             cursor = conn.execute(stmt, params)
-        except:
+        except Exception:
             logging.error(
                 "Error executing statement %s with parameter %s", stmt, params
             )
@@ -84,7 +84,7 @@ def exec_modify(stmt: str, params: tuple[str] | dict[str, int | str] = ()) -> No
         print(f"{cursor.rowcount} rows modified / deleted")
 
 
-def exec_select(stmt: str, params: tuple | dict[str, int | str] = ()):
+def exec_select(stmt: str, params: tuple[str, ...] | dict[str, int | str] = ()):
     """Execute a SELECT statement and return the cursor."""
     with conn:
         stmt_wo_leading_whitespaces = textwrap.dedent(stmt).strip()
@@ -93,7 +93,7 @@ def exec_select(stmt: str, params: tuple | dict[str, int | str] = ()):
         ), f"Empty SELECT statement after trimming whitespaces:\n{stmt_wo_leading_whitespaces}"
         try:
             cursor = conn.execute(stmt_wo_leading_whitespaces, params)
-        except:
+        except Exception:
             logging.error(
                 "Error executing statement %s with parameter %s", stmt, params
             )
@@ -149,9 +149,9 @@ def merge_all_sensors():
     """
     stmt = "SELECT statistic_id FROM statistics_meta WHERE statistic_id like '%_2';"
     cursor = exec_select(stmt)
-    list_all_2_sensors = [x[0] for x in cursor.fetchall()]
+    sensors_with_suffix = [x[0] for x in cursor.fetchall()]
     sensors2merge = []
-    for sensor2_name in list_all_2_sensors:
+    for sensor2_name in sensors_with_suffix:
         sensor_name = sensor2_name[:-2]
         if sensor_name.startswith("sensor.electricmeter"):
             logging.info("Skip electric meter sensor %s", sensor_name)
@@ -279,7 +279,11 @@ def merge_check_single_sensor(old_sensor_name: str, new_sensor_name: str):
         """,
         {"sensor_id": old_sensor_id},
     )
-    old_created_ts, old_start_ts = cursor.fetchone()
+    row = cursor.fetchone()
+    if row is None:
+        logging.error("No statistics data found for old sensor %s", old_sensor_name)
+        return
+    old_created_ts, old_start_ts = row
 
     cursor = exec_select(
         """
@@ -291,46 +295,22 @@ def merge_check_single_sensor(old_sensor_name: str, new_sensor_name: str):
         """,
         {"sensor_id": new_sensor_id},
     )
-    new_created_ts, new_start_ts = cursor.fetchone()
+    row = cursor.fetchone()
+    if row is None:
+        logging.error("No statistics data found for new sensor %s", new_sensor_name)
+        return
+    new_created_ts, new_start_ts = row
 
-    if new_created_ts < old_created_ts:
+    if new_created_ts <= old_created_ts:
         logging.error(
-            "First created_ts timestamp %s of the new sensor %s is older than "
-            "the last timestamp %s of the old sensor %s",
-            new_created_ts,
-            new_sensor_name,
-            old_created_ts,
-            old_sensor_name,
+            "Overlap in created_ts: old sensor %s ends at %s, new sensor %s starts at %s",
+            old_sensor_name, old_created_ts, new_sensor_name, new_created_ts,
         )
         return
-    if new_created_ts == old_created_ts:
+    if new_start_ts <= old_start_ts:
         logging.error(
-            "First created_ts timestamp %s of the new sensor %s is equal to "
-            "the last timestamp %s of the old sensor %s",
-            new_created_ts,
-            new_sensor_name,
-            old_created_ts,
-            old_sensor_name,
-        )
-        return
-    if new_start_ts < old_start_ts:
-        logging.error(
-            "First start_ts timestamp %s of the new sensor %s is older than "
-            "the last timestamp %s of the old sensor %s",
-            new_start_ts,
-            new_sensor_name,
-            old_start_ts,
-            old_sensor_name,
-        )
-        return
-    if new_start_ts == old_start_ts:
-        logging.error(
-            "First start_ts timestamp %s of the new sensor %s is equal to "
-            "the last timestamp %s of the old sensor %s",
-            new_start_ts,
-            new_sensor_name,
-            old_start_ts,
-            old_sensor_name,
+            "Overlap in start_ts: old sensor %s ends at %s, new sensor %s starts at %s",
+            old_sensor_name, old_start_ts, new_sensor_name, new_start_ts,
         )
         return
     logging.info("Consistency checks passed")
@@ -340,9 +320,10 @@ def merge_check_single_sensor(old_sensor_name: str, new_sensor_name: str):
         exec_modify(
             f"""
             UPDATE {t}
-            SET metadata_id = {new_sensor_id}
-            WHERE metadata_id = {old_sensor_id};
+            SET metadata_id = :new_sensor_id
+            WHERE metadata_id = :old_sensor_id;
             """,
+            {"new_sensor_id": new_sensor_id, "old_sensor_id": old_sensor_id},
         )
     if dry_run:
         logging.info(
@@ -392,7 +373,7 @@ if __name__ == "__main__":
     merge_check_parser = subparsers.add_parser(
         "merge_check",
         description=merge_check_single_sensor.__doc__,
-        help='Merge items from one sensor to another sensor with some checks.',
+        help="Merge items from one sensor to another sensor with some checks.",
     )
     merge_check_parser.add_argument(
         dest="sensor_name_old",
@@ -402,10 +383,8 @@ if __name__ == "__main__":
         dest="sensor_name_new",
         help="name new sensor",
     )
-    desc = 'Assign sensor data from all "<name>_2" sensors to original sensors and delete "<name>_2" sensors, as they were created by mistake.'
     merge_all_parser = subparsers.add_parser(
         "merge_all",
-        #     The "<name>_2" sensors were created by mistake.
         description=merge_all_sensors.__doc__,
         help='Search and cleanup all "<name>_2" sensors, as they were created by mistake.',
     )
@@ -447,7 +426,7 @@ if __name__ == "__main__":
     try:
         conn.autocommit = False
     except AttributeError:
-        conn.isolation_level = None
+        conn.isolation_level = "DEFERRED"
 
     if args.action == "list_sensors":
         list_all_sensors()
