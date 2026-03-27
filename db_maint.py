@@ -47,7 +47,7 @@ WHERE metadata_id = :old_sensor_id;
 8137 rows modified / deleted
     INFO: merge_check_single_sensor(): All data from the old sensor assigned to the new sensor
 
-Copyright (c) 2025 Carsten Grohmann
+Copyright (c) 2025-2026 Carsten Grohmann
 License: MIT (see LICENSE.txt)
 THIS PROGRAM COMES WITH NO WARRANTY
 """

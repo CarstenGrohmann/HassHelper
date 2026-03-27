@@ -46,7 +46,7 @@ Additionally, the script can be used to map old sensor IDs to new sensor IDs.
 
 These scripts are licensed under the MIT license.
 
-> Copyright (c) 2025 Carsten Grohmann,  mail &lt;add at here&gt; carstengrohmann.de
+> Copyright (c) 2025-2026 Carsten Grohmann,  mail &lt;add at here&gt; carstengrohmann.de
 >
 > Permission is hereby granted, free of charge, to any person obtaining a copy of
 > this software and associated documentation files (the "Software"), to deal in

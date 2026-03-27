@@ -2,7 +2,7 @@
 #
 # Copy sensor data from table "states" to statistics table
 #
-# Copyright (c) 2025 Carsten Grohmann
+# Copyright (c) 2025-2026 Carsten Grohmann
 # License: MIT (see LICENSE.txt)
 # THIS PROGRAM COMES WITH NO WARRANTY
 

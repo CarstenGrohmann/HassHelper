@@ -3,7 +3,7 @@
 # Extract old statistics data from backup snapshots and prepare SQL
 # statements to re-insert the data with modified sensor IDs.
 #
-# Copyright (c) 2025 Carsten Grohmann
+# Copyright (c) 2025-2026 Carsten Grohmann
 # License: MIT (see LICENSE.txt)
 # THIS PROGRAM COMES WITH NO WARRANTY
 
