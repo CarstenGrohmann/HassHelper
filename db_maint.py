@@ -305,13 +305,19 @@ def merge_check_single_sensor(old_sensor_name: str, new_sensor_name: str):
     if new_created_ts <= old_created_ts:
         logging.error(
             "Overlap in created_ts: old sensor %s ends at %s, new sensor %s starts at %s",
-            old_sensor_name, old_created_ts, new_sensor_name, new_created_ts,
+            old_sensor_name,
+            old_created_ts,
+            new_sensor_name,
+            new_created_ts,
         )
         return
     if new_start_ts <= old_start_ts:
         logging.error(
             "Overlap in start_ts: old sensor %s ends at %s, new sensor %s starts at %s",
-            old_sensor_name, old_start_ts, new_sensor_name, new_start_ts,
+            old_sensor_name,
+            old_start_ts,
+            new_sensor_name,
+            new_start_ts,
         )
         return
     logging.info("Consistency checks passed")

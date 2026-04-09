@@ -82,21 +82,24 @@ def print_sensor_summary() -> None:
 
 def print_per_sensor_stats() -> None:
     print_section("Per-Sensor Statistics")
-    cursor = exec_select("""
+    cursor = exec_select(
+        """
         SELECT
             sm.statistic_id,
             (SELECT COUNT(*) FROM statistics s WHERE s.metadata_id = sm.id),
             (SELECT COUNT(*) FROM statistics_short_term sst WHERE sst.metadata_id = sm.id)
         FROM statistics_meta sm
         ORDER BY sm.statistic_id
-    """)
+    """
+    )
     rows = [(r[0], f"{r[1]:,}", f"{r[2]:,}") for r in cursor.fetchall()]
     print_table(["Sensor", "statistics", "short_term"], rows, ["<", ">", ">"])
 
 
 def print_states_per_sensor() -> None:
     print_section("States per Sensor")
-    cursor = exec_select("""
+    cursor = exec_select(
+        """
         SELECT
             sm.entity_id,
             COUNT(*) AS cnt,
@@ -105,14 +108,16 @@ def print_states_per_sensor() -> None:
         INNER JOIN states_meta sm ON states.metadata_id = sm.metadata_id
         GROUP BY sm.entity_id
         ORDER BY cnt DESC
-    """)
+    """
+    )
     rows = [(r[0], f"{r[1]:,}", f"{r[2]}%") for r in cursor.fetchall()]
     print_table(["Sensor", "States", "%"], rows, ["<", ">", ">"])
 
 
 def print_event_types() -> None:
     print_section("Event Types")
-    cursor = exec_select("""
+    cursor = exec_select(
+        """
         SELECT
             et.event_type,
             COUNT(*) AS cnt,
@@ -121,7 +126,8 @@ def print_event_types() -> None:
         INNER JOIN event_types et ON events.event_type_id = et.event_type_id
         GROUP BY et.event_type
         ORDER BY cnt DESC
-    """)
+    """
+    )
     rows = [(r[0], f"{r[1]:,}", f"{r[2]}%") for r in cursor.fetchall()]
     print_table(["Event Type", "Count", "%"], rows, ["<", ">", ">"])
 
