@@ -53,11 +53,13 @@ THIS PROGRAM COMES WITH NO WARRANTY
 """
 
 import argparse
+import json
 import logging
 import os.path
 import sqlite3
 import sys
 import textwrap
+from datetime import datetime, timezone
 from typing import Optional
 
 conn: Optional[sqlite3.Connection] = None
@@ -66,9 +68,20 @@ conn: Optional[sqlite3.Connection] = None
 dry_run: bool = True
 """Don't modify the database if True"""
 
+FIVE_MIN_IN_SECONDS = 300
+ONE_HOUR_IN_SECONDS = 3600
+PERIOD_RESET_THRESHOLD = 1.0  # state < this signals a daily/weekly counter reset
+SPIKE_TS_TOLERANCE = 1  # seconds: compensates sub-second precision loss in user input
 
 
-def exec_modify(stmt: str, params: tuple[str, ...] | dict[str, int | str | float] = ()) -> None:
+def fmt_ts(t: float) -> str:
+    """Format a UNIX timestamp as a UTC datetime string."""
+    return datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def exec_modify(
+    stmt: str, params: tuple[str, ...] | dict[str, int | str | float] = ()
+) -> None:
     """Execute a UPDATE, DELETE or INSERT statement."""
     with conn:
         stmt = textwrap.dedent(stmt)
@@ -100,6 +113,21 @@ def exec_select(stmt: str, params: tuple[str, ...] | dict[str, int | str | float
             )
             raise
     return cursor
+
+
+def query_states_meta_id(sensor_name: str) -> Optional[int]:
+    """Return the metadata_id for a given entity_id from states_meta, or None."""
+    res = exec_select(
+        "SELECT metadata_id FROM states_meta WHERE entity_id = ?",
+        (sensor_name,),
+    )
+    rows = res.fetchall()
+    if len(rows) != 1:
+        logging.error(
+            "Sensor %s not found in states_meta (found %d).", sensor_name, len(rows)
+        )
+        return None
+    return rows[0][0]
 
 
 def query_statistics_sensor_id(sensor_name: str) -> Optional[int]:
@@ -340,6 +368,247 @@ def merge_check_single_sensor(old_sensor_name: str, new_sensor_name: str):
         logging.info("All data from the old sensor assigned to the new sensor")
 
 
+def detect_spikes(sensor_name: str):
+    """Find spikes (value drops) in a total_increasing sensor."""
+    metadata_id = query_states_meta_id(sensor_name)
+    if metadata_id is None:
+        return
+    cursor = exec_select(
+        """
+        SELECT before_ts, before_state, spike_ts, spike_state, after_ts, after_state
+        FROM (
+            SELECT LAG(last_updated_ts, 2) OVER (ORDER BY state_id) AS before_ts,
+                   LAG(state, 2)           OVER (ORDER BY state_id) AS before_state,
+                   LAG(last_updated_ts)    OVER (ORDER BY state_id) AS spike_ts,
+                   LAG(state)              OVER (ORDER BY state_id) AS spike_state,
+                   last_updated_ts                                   AS after_ts,
+                   state                                             AS after_state
+            FROM states
+            WHERE metadata_id = :metadata_id
+              AND state NOT IN ('unknown', 'unavailable')
+        )
+        WHERE spike_state IS NOT NULL
+          AND CAST(after_state AS REAL) < CAST(spike_state AS REAL)
+    """,
+        {"metadata_id": metadata_id},
+    )
+    spikes = cursor.fetchall()
+    if not spikes:
+        logging.info("No spikes found for %s", sensor_name)
+        return
+    for before_ts, before_state, spike_ts, spike_state, after_ts, after_state in spikes:
+        delta = float(spike_state) - float(after_state)
+        logging.info("Spike found:")
+        if before_ts:
+            logging.info("  before: %s = %s", fmt_ts(before_ts), before_state)
+        logging.info(
+            "  spike:  %s = %s  (delta=%.3f)", fmt_ts(spike_ts), spike_state, delta
+        )
+        logging.info("  after:  %s = %s", fmt_ts(after_ts), after_state)
+
+
+def find_reset_boundary(states_meta_id: int, spike_ts: float) -> Optional[float]:
+    """Return timestamp of first period reset after spike, or None."""
+    cursor = exec_select(
+        """
+        SELECT last_updated_ts FROM states
+        WHERE metadata_id = :mid
+          AND last_updated_ts > :spike_ts
+          AND state NOT IN ('unknown', 'unavailable')
+          AND CAST(state AS REAL) < :threshold
+        ORDER BY last_updated_ts ASC
+        LIMIT 1
+    """,
+        {
+            "mid": states_meta_id,
+            "spike_ts": spike_ts,
+            "threshold": PERIOD_RESET_THRESHOLD,
+        },
+    )
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def fix_sensor_spike(
+    states_meta_id: int, spike_ts: float, delta: float, end_ts: Optional[float]
+):
+    """Subtract delta from states of a sensor from spike_ts to end_ts."""
+    params: dict = {"mid": states_meta_id, "spike_ts": spike_ts, "delta": delta}
+    end_clause = ""
+    if end_ts is not None:
+        params["end_ts"] = end_ts
+        end_clause = "AND last_updated_ts < :end_ts"
+    exec_modify(
+        f"""
+        UPDATE states
+        SET state = CAST(CAST(state AS REAL) - :delta AS TEXT)
+        WHERE metadata_id = :mid
+          AND last_updated_ts >= :spike_ts
+          AND state NOT IN ('unknown', 'unavailable')
+          {end_clause}
+    """,
+        params,
+    )
+
+
+def fix_statistics_table(
+    table: str,
+    stats_meta_id: int,
+    spike_ts: float,
+    delta: float,
+    end_ts: Optional[float],
+):
+    """Subtract delta from state and sum in statistics table from spike bucket onward."""
+    bucket = ONE_HOUR_IN_SECONDS if table == "statistics" else FIVE_MIN_IN_SECONDS
+    bucket_start = spike_ts - (spike_ts % bucket)
+    params: dict = {"mid": stats_meta_id, "bucket_start": bucket_start, "delta": delta}
+    end_clause = ""
+    if end_ts is not None:
+        params["end_ts"] = end_ts
+        end_clause = "AND start_ts < :end_ts"
+    exec_modify(
+        f"""
+        UPDATE {table}
+        SET state = state - :delta,
+            sum   = sum   - :delta
+        WHERE metadata_id = :mid
+          AND start_ts >= :bucket_start
+          {end_clause}
+    """,
+        params,
+    )
+
+
+def patch_restore_state(
+    restore_path: str, entity_id: str, delta: float, end_ts: Optional[float] = None
+):
+    """Subtract delta from entity state in core.restore_state JSON file.
+
+    Skips entries whose last_changed is after end_ts (already past period reset).
+    """
+    if not os.path.isfile(restore_path):
+        logging.info("core.restore_state not found, skipping patch for %s", entity_id)
+        return
+    with open(restore_path) as f:
+        data = json.load(f)
+    for entry in data.get("data", []):
+        state = entry.get("state", {})
+        if state.get("entity_id") != entity_id:
+            continue
+        if end_ts is not None:
+            last_changed = state.get("last_changed") or state.get("last_updated", "")
+            try:
+                if datetime.fromisoformat(last_changed).timestamp() >= end_ts:
+                    logging.info(
+                        "Skipping core.restore_state for %s: after reset boundary",
+                        entity_id,
+                    )
+                    continue
+            except (ValueError, AttributeError):
+                pass
+        try:
+            val = float(state["state"])
+            state["state"] = str(round(val - delta, 6))
+            logging.info(
+                "Patched core.restore_state: %s %.3f -> %.3f",
+                entity_id,
+                val,
+                val - delta,
+            )
+        except (ValueError, KeyError):
+            logging.warning(
+                "Could not patch state for %s in core.restore_state", entity_id
+            )
+    if not dry_run:
+        with open(restore_path, "w") as f:
+            json.dump(data, f, indent=2)
+
+
+def fix_spike(
+    sensor_name: str, spike_ts_str: str, correct_value: float, db_filename: str
+):
+    """Correct a spike in a single sensor's states, statistics and restore_state."""
+    spike_ts = (
+        datetime.strptime(spike_ts_str, "%Y-%m-%d %H:%M:%S")
+        .replace(tzinfo=timezone.utc)
+        .timestamp()
+    )
+
+    states_meta_id = query_states_meta_id(sensor_name)
+    if states_meta_id is None:
+        return
+    cursor = exec_select(
+        """
+        SELECT last_updated_ts, state FROM states
+        WHERE metadata_id = :mid
+          AND last_updated_ts BETWEEN :ts - :tol AND :ts + :tol
+    """,
+        {"mid": states_meta_id, "ts": spike_ts, "tol": SPIKE_TS_TOLERANCE},
+    )
+    spike_row = cursor.fetchone()
+    if spike_row is None:
+        logging.error("No state found for %s at %s", sensor_name, spike_ts_str)
+        return
+    spike_value = float(spike_row[1])
+    delta = spike_value - correct_value
+    state_before = exec_select(
+        """
+        SELECT last_updated_ts, state FROM states
+        WHERE metadata_id = :mid AND last_updated_ts < :ts - :tol
+          AND state NOT IN ('unknown', 'unavailable')
+        ORDER BY last_updated_ts DESC LIMIT 1
+    """,
+        {"mid": states_meta_id, "ts": spike_ts, "tol": SPIKE_TS_TOLERANCE},
+    ).fetchone()
+    state_after = exec_select(
+        """
+        SELECT last_updated_ts, state FROM states
+        WHERE metadata_id = :mid AND last_updated_ts > :ts + :tol
+          AND state NOT IN ('unknown', 'unavailable')
+        ORDER BY last_updated_ts ASC LIMIT 1
+    """,
+        {"mid": states_meta_id, "ts": spike_ts, "tol": SPIKE_TS_TOLERANCE},
+    ).fetchone()
+    logging.info("Fix spike:")
+    if state_before:
+        logging.info("  before: %s = %s", fmt_ts(state_before[0]), state_before[1])
+    logging.info(
+        "  spike:  %s = %s  (delta=%.3f)", fmt_ts(spike_row[0]), spike_value, delta
+    )
+    if state_after:
+        logging.info("  after:  %s = %s", fmt_ts(state_after[0]), state_after[1])
+
+    # state_attributes stores spike value as last_valid_state; fix all occurrences
+    exec_modify(
+        """
+        UPDATE state_attributes
+        SET shared_attrs = REPLACE(shared_attrs, :spike_str, :correct_str)
+        WHERE shared_attrs LIKE :pattern
+    """,
+        {
+            "spike_str": f'"{spike_value}"',
+            "correct_str": f'"{correct_value}"',
+            "pattern": f'%"last_valid_state": "{spike_value}"%',
+        },
+    )
+
+    end_ts = find_reset_boundary(states_meta_id, spike_ts)
+    logging.info("Reset boundary: %s", fmt_ts(end_ts) if end_ts else "none")
+    fix_sensor_spike(states_meta_id, spike_ts, delta, end_ts)
+
+    stats_meta_id = query_statistics_sensor_id(sensor_name)
+    if stats_meta_id is not None:
+        fix_statistics_table("statistics", stats_meta_id, spike_ts, delta, end_ts)
+        fix_statistics_table(
+            "statistics_short_term", stats_meta_id, spike_ts, delta, end_ts
+        )
+
+    restore_path = os.path.join(
+        os.path.dirname(db_filename) or ".", ".storage", "core.restore_state"
+    )
+    patch_restore_state(restore_path, sensor_name, delta, end_ts)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Performing sensor maintenance tasks in HASS SQLite database",
@@ -404,6 +673,25 @@ if __name__ == "__main__":
         dest="sensor_name",
         help="Original sensor name (without _2)",
     )
+    detect_parser = subparsers.add_parser(
+        "detect_spikes",
+        description=detect_spikes.__doc__,
+        help="Find spikes (value drops) in a total_increasing sensor",
+    )
+    detect_parser.add_argument("sensor_name", help="Sensor name to scan")
+
+    fix_spike_parser = subparsers.add_parser(
+        "fix_spike",
+        description=fix_spike.__doc__,
+        help="Correct a spike in a sensor and all derived sensors",
+    )
+    fix_spike_parser.add_argument("sensor_name", help="Source sensor name")
+    fix_spike_parser.add_argument(
+        "spike_timestamp", help="UTC timestamp of spike (YYYY-MM-DD HH:MM:SS)"
+    )
+    fix_spike_parser.add_argument(
+        "correct_value", type=float, help="Correct value to replace spike"
+    )
 
     args = parser.parse_args()
 
@@ -443,3 +731,9 @@ if __name__ == "__main__":
         merge_all_sensors()
     elif args.action == "merge_single":
         merge_single_sensor(args.sensor_name)
+    elif args.action == "detect_spikes":
+        detect_spikes(args.sensor_name)
+    elif args.action == "fix_spike":
+        fix_spike(
+            args.sensor_name, args.spike_timestamp, args.correct_value, args.db_filename
+        )
