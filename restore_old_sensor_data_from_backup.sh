@@ -81,7 +81,7 @@ for snap in "${LIST_BACKUP_IDS[@]}"; do
      rm -rf "${RESTORE_DIR:?}/${snap:?}"
    fi
    # CHANGEME: Add code to restore the SQLite database from backup
-   # <restore command" "$snap" <restore options>
+   # <restore command" "$snap" <restore options> XXX target ${RESTORE_DIR}/${SNAP}
    if [[ $? -ne 0 ]]; then
      echo "ERROR: Restoring snapshot $snap failed"
      exit 1
@@ -95,7 +95,7 @@ done
 echo
 echo "Extract sensor data"
 echo "==================="
-for snap in ${LIST_BACKUP_IDS[@]}; do
+for snap in "${LIST_BACKUP_IDS[@]}"; do
    SENSOR_DATA_FILE="$RESTORE_DIR/${snap}/sensors.txt"
    if [[ -s "$SENSOR_DATA_FILE" ]]; then
      echo "Sensor data for snapshot $snap already extracted - ignoring"
@@ -111,7 +111,7 @@ echo
 echo "Check for equal sensor ids"
 echo "=========================="
 LAST=""
-for snap in ${LIST_BACKUP_IDS[@]}; do
+for snap in "${LIST_BACKUP_IDS[@]}"; do
    echo "Compare sensor data between $LAST and $snap"
    CURR="$RESTORE_DIR/${snap}/sensors.txt"
    if [[ $LAST ]]; then
@@ -125,19 +125,19 @@ for snap in ${LIST_BACKUP_IDS[@]}; do
    LAST="$CURR"
 done
 
-for table in ${TABLES[@]}; do
+for table in "${TABLES[@]}"; do
   echo
   echo "Check for equal schema of table ${table}"
   echo "========================================"
   LAST=""
-  for snap in ${LIST_BACKUP_IDS[@]}; do
+  for snap in "${LIST_BACKUP_IDS[@]}"; do
      SCHEMA_FILE="$RESTORE_DIR/${snap}/schema_${table}.txt"
      if [[ -s "$SCHEMA_FILE" ]]; then
        echo "Schema for snapshot $snap already extracted - ignoring"
        continue
     fi
      echo "Compare schema of ${table} between $LAST and $snap"
-     sqlite3 "$RESTORE_DIR/${snap}/home-assistant_v2.db" ".schema ${table}" > ${SCHEMA_FILE}
+     sqlite3 "$RESTORE_DIR/${snap}/home-assistant_v2.db" ".schema ${table}" > "${SCHEMA_FILE}"
      if [[ $LAST ]]; then
        diff -wu "$LAST" "$SCHEMA_FILE" > /dev/null 2>&1
        res=$?
@@ -155,8 +155,8 @@ done
 echo
 echo "Extract data from statistics tables"
 echo "==================================="
-for table in ${TABLES[@]}; do
-  for snap in ${LIST_BACKUP_IDS[@]}; do
+for table in "${TABLES[@]}"; do
+  for snap in "${LIST_BACKUP_IDS[@]}"; do
      DATA_FILE="$RESTORE_DIR/${snap}/data_${table}.sql"
      if [[ -s "$DATA_FILE" ]]; then
        echo "Statistics data from table ${table} in snapshot ${snap} already extracted - ignoring"
@@ -166,21 +166,21 @@ for table in ${TABLES[@]}; do
      # CHANGEME: Replace ids (35 till 41) with old sensor IDs
      sqlite3 "$RESTORE_DIR/${snap}/home-assistant_v2.db" -quote "\
        SELECT * FROM ${table} WHERE metadata_id in (35,36,37,38,39,40,41); \
-       " > ${DATA_FILE}
+       " > "${DATA_FILE}"
   done
 done
 
 echo
 echo "Merge data"
 echo "=========="
-for table in ${TABLES[@]}; do
+for table in "${TABLES[@]}"; do
   TOTAL_FILE="./total_${table}.sql"
    if [[ -s "$TOTAL_FILE" ]]; then
      echo "Merged data already exists - ignoring"
      continue
   fi
   rm "${TOTAL_FILE}"
-  for snap in ${LIST_BACKUP_IDS[@]}; do
+  for snap in "${LIST_BACKUP_IDS[@]}"; do
      echo "Merge table ${table} from snapshot ${snap}"
      DATA_FILE="$RESTORE_DIR/${snap}/data_${table}.sql"
      cat "${DATA_FILE}" >> "${TOTAL_FILE}"
@@ -192,10 +192,10 @@ done
 echo
 echo "Prepare SQL statements and map sensor IDs"
 echo "========================================="
-for table in ${TABLES[@]}; do
+for table in "${TABLES[@]}"; do
   TOTAL_FILE="./total_${table}.sql"
   SQL_FILE="./insert_${table}.sql"
-  awk -vtable=${table} -F "|" '{
+  awk -vtable="${table}" -F "|" '{
     c_id = ($1 == "" ? "NULL" : $1);
     c_created = ($2 == "" ? "NULL" : $2);
     c_created_ts = ($3 == "" ? "NULL" : $3);
